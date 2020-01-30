@@ -154,17 +154,17 @@ func updateKernel(old, new *hashmap.Map) *hashmap.Map {
 
 	removeLines := getIPBatchRemove(old, new)
 	log.Println("removing the following addresses", removeLines)
-	/*err := runIPBatch(removeLines)
+	err := runIPBatch(removeLines)
 	if err != nil {
 		log.Println("error while removing addresses", err)
-	}*/
+	}
 
 	addLines := getIPBatchAdd(old, new)
 	log.Println("adding the following addresses", addLines)
-	/*err = runIPBatch(addLines)
+	err = runIPBatch(addLines)
 	if err != nil {
 		log.Println("error while adding addresses", err)
-	}*/
+	}
 
 	return new
 }
@@ -179,26 +179,38 @@ func runIPBatch(input []string) error {
 }
 
 func getIPBatchRemove(old, new *hashmap.Map) []string {
-	removedPrefixes := make(map[string]string)
-	val, found := old.Find("known-prefixes")
+	oldPrefixes, found := old.Find("known-prefixes")
 	if !found {
 		return nil
 	}
-	pfxs := val.(*hashmap.Map)
-	pfxs.Range(func(key, val string) {
-		if !new.Contains(key) {
+
+	newPrefixes := hashmap.Empty()
+	newPrefixesV, found := new.Find("known-prefixes")
+	if found {
+		newPrefixes = newPrefixesV.(*hashmap.Map)
+	}
+
+	oldConfigV, found := old.Find("config")
+	if !found {
+		return nil
+	}
+	oldConfig := oldConfigV.(*hashmap.Map)
+
+	removedPrefixes := make(map[string]string)
+	oldPrefixes.(*hashmap.Map).Range(func(key string, val string) {
+		if !newPrefixes.Contains(key) {
 			removedPrefixes[key] = val
 		}
 	})
 	var out []string
-	conf := old.At("config").(*hashmap.Map)
 	for intf, prefix := range removedPrefixes {
-		conf.Range(func(targetIntf string, targetConf *hashmap.Map) {
-			if targetConf.At("dhcpv6-client-interface") != intf {
-				return
-			}
-			address := calculateAddress(
-				targetIntf, targetConf, prefix)
+		targetIntfsV, found := oldConfig.Find(intf)
+		if !found {
+			continue
+		}
+		targetIntfs := targetIntfsV.(*hashmap.Map)
+		targetIntfs.Range(func(targetIntf string, targetConf *hashmap.Map) {
+			address := calculateAddress(targetIntf, targetConf, prefix)
 			if address == "" {
 				log.Printf("failed to calculate address",
 					targetIntf, targetConf, prefix)
@@ -212,26 +224,39 @@ func getIPBatchRemove(old, new *hashmap.Map) []string {
 }
 
 func getIPBatchAdd(old, new *hashmap.Map) []string {
-	addedPrefixes := make(map[string]string)
-	val, found := new.Find("known-prefixes")
+	newPrefixes, found := new.Find("known-prefixes")
 	if !found {
 		return nil
 	}
-	pfxs := val.(*hashmap.Map)
-	pfxs.Range(func(key, val string) {
-		if !old.Contains(key) {
+
+	oldPrefixes := hashmap.Empty()
+	oldPrefixesV, found := old.Find("known-prefixes")
+	if found {
+		oldPrefixes = oldPrefixesV.(*hashmap.Map)
+	}
+
+	newConfigV, found := new.Find("config")
+	if !found {
+		return nil
+	}
+	newConfig := newConfigV.(*hashmap.Map)
+
+	addedPrefixes := make(map[string]string)
+	newPrefixes.(*hashmap.Map).Range(func(key string, val string) {
+		if !oldPrefixes.Contains(key) {
 			addedPrefixes[key] = val
 		}
 	})
+
 	var out []string
-	conf := new.At("config").(*hashmap.Map)
 	for intf, prefix := range addedPrefixes {
-		conf.Range(func(targetIntf string, targetConf *hashmap.Map) {
-			if targetConf.At("dhcpv6-client-interface") != intf {
-				return
-			}
-			address := calculateAddress(
-				targetIntf, targetConf, prefix)
+		targetIntfsV, found := newConfig.Find(intf)
+		if !found {
+			continue
+		}
+		targetIntfs := targetIntfsV.(*hashmap.Map)
+		targetIntfs.Range(func(targetIntf string, targetConf *hashmap.Map) {
+			address := calculateAddress(targetIntf, targetConf, prefix)
 			if address == "" {
 				log.Printf("failed to calculate address",
 					targetIntf, targetConf, prefix)
@@ -245,9 +270,6 @@ func getIPBatchAdd(old, new *hashmap.Map) []string {
 }
 
 func transformConfigToDesiredState(tree *data.Tree) *hashmap.Map {
-	// This is kind of gross but the model is kind of gross so there
-	// is no avoiding it. Maps configuration model to a map from
-	// interface name to dhcpv6pd address info.
 	return hashmap.Empty().Transform(func(m *hashmap.TMap) *hashmap.TMap {
 		ifaceTypes := tree.At("/vyatta-interfaces-v1:interfaces").AsObject()
 		ifaceTypes.Range(func(ifaceType string, val *data.Value) {
@@ -260,11 +282,16 @@ func transformConfigToDesiredState(tree *data.Tree) *hashmap.Map {
 				obj := val.AsObject()
 				out := hashmap.Empty().AsTransient()
 				obj.At("ipv6").ToTree().
-					At("/vyatta-ipv6-rtradv-v1:address/vyatta-dhcpv6pd-v1:dhcpv6pd").
-					AsObject().
-					Range(func(key string, val *data.Value) {
-
-						out.Assoc(stripKey(key), val.ToNative())
+					At("/vyatta-dhcpv6pd-v1:dhcpv6pd/target-interface").
+					AsArray().
+					Range(func(val *data.Value) {
+						obj := val.AsObject()
+						key := obj.At("name").ToNative()
+						value := hashmap.Empty().AsTransient()
+						obj.Range(func(key string, val *data.Value) {
+							value.Assoc(stripKey(key), val.ToNative())
+						})
+						out = out.Assoc(key, value.AsPersistent())
 					})
 				m.Assoc(
 					obj.At(listKey).ToNative(),
@@ -313,10 +340,9 @@ func calculateAddress(
 				"for eui64 calculation on", targetIntf)
 			return ""
 		}
-		return calculateEUI64(getMACAddress(targetIntf), ipv6Net)
-	case "template":
-		return calculateTemplate(targetConf.At("template").(string),
-			ipv6Net)
+		return calculateEUI64(ipv6Net,
+			uint16(targetConf.At("sla-id").(uint32)),
+			getMACAddress(targetIntf))
 	}
 	return ""
 }
@@ -331,7 +357,7 @@ func getMACAddress(intf string) net.HardwareAddr {
 	return iface.HardwareAddr
 }
 
-func calculateEUI64(mac net.HardwareAddr, prefix *net.IPNet) string {
+func calculateEUI64(prefix *net.IPNet, slaID uint16, mac net.HardwareAddr) string {
 	eui64 := make([]byte, 8)
 	mid := len(mac) / 2
 	copy(eui64, mac[0:mid])
@@ -342,13 +368,12 @@ func calculateEUI64(mac net.HardwareAddr, prefix *net.IPNet) string {
 	ip := make([]byte, 16)
 	masklen := 64 / 8
 	copy(ip, prefix.IP)
+	//TODO: slas may collide if we get a prefix longer than /48...
+	ip[masklen-2] = uint8(slaID >> 8)
+	ip[masklen-1] = uint8(slaID & 0xff)
 	copy(ip[masklen:], eui64)
 
 	prefix.IP = ip
 	prefix.Mask = net.CIDRMask(64, 128)
 	return prefix.String()
-}
-
-func calculateTemplate(template string, prefix *net.IPNet) string {
-	return ""
 }

@@ -79,41 +79,50 @@ module vyatta-dhcpv6pd-v1 {
 		}
 	}
 
-	grouping dhcpv6pd-address {
+	grouping dhcpv6pd-group {
 		container dhcpv6pd {
 			presence "Enables dhcpv6pd address autoconfiguration";
 			configd:help "Enables dhcpv6pd address autoconfiguration";
-			leaf dhcpv6-client-interface {
-				description "Interface facing the dhcpv6 server";
-				configd:help "Interface facing the dhcpv6 server";
-				type string;
-				mandatory true;
-			}
-			leaf address-type {
-				description "Address derivation type";
-				configd:help "Address derivation type";
-				type enumeration {
-					enum eui64 {
-						description "Derive the address as a eui64 address";
-						configd:help "Derive the address as a eui64 address";
-					}
-					enum template {
-						description "Derive the address from the provided template";
-						configd:help "Derive the address from the provided template";
-					}
+			list target-interface {
+				description "Target interfaces to which prefixes are delegate";
+				configd:help "Target interfaces to which prefixes are delegate";
+				key name;
+				unique sla-id;
+				leaf name {
+					description "Name of the interface";
+					configd:help "Name of the interface";
+					type string;
 				}
-				default eui64;
-			}
-			leaf template {
-				description "Derive address based on the provided template";
-				configd:help "Derive address based on the provided template";
-				must "address-type = template";
-				type string; //TODO: make pattern for a v6 template
+				leaf sla-id {
+					description "Site-Level Aggregation identifier";
+					configd:help "Site-Level Aggregation identifier ";
+					type uint16;
+					mandatory true;
+				}
+				leaf prefix-length {
+					description "Prefix length";
+					configd:help "Prefix length";
+					type uint8 {
+						range 8..128;
+					}
+					default 64;
+				}
+				leaf address-type {
+					description "Address derivation type";
+					configd:help "Address derivation type";
+					type enumeration {
+						enum eui64 {
+							description "Derive the address as a eui64 address";
+							configd:help "Derive the address as a eui64 address";
+						}
+					}
+					default eui64;
+				}
 			}
 		}
 	}
 
-	augment /if:interfaces/dp:dataplane/dp:ipv6/rtadv:address {
-		uses dhcpv6pd-address;
+	augment /if:interfaces/dp:dataplane/dp:ipv6 {
+		uses dhcpv6pd-group;
 	}
 }
