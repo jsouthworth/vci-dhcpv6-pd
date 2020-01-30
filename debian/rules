@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+export DH_GOPKG := github.com/danos/vci-dhcpv6-pd
+
+%:
+	dh $@ --buildsystem=golang --with=golang,vci,yang
+
+override_dh_auto_build: vet
+	dh_auto_build
+
+# We do not vet vendor code
+vet:
+	if go doc cmd/vet >/dev/null 2>&1; then \
+		go tool vet $$(find . -type f -name \*.go | grep -v "/vendor/"); \
+	fi

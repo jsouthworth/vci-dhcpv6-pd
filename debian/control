@@ -1,0 +1,27 @@
+Source: vci-dhcpv6-pd
+Section: contrib/net
+Priority: extra
+Maintainer: Vyatta Package Maintainers <maintainers@vyatta.com>
+Build-Depends: debhelper (>= 9),
+ dh-golang,
+ dh-vci,
+ dh-yang,
+ golang-any,
+ golang-github-danos-vci-dev,
+ golang-github-danos-encoding-rfc7951-dev,
+ golang-jsouthworth-etm-dev,
+Standards-Version: 3.9.8
+
+Package: vci-dhcpv6-pd
+Architecture: any
+Depends: ${shlibs:Depends}
+Description: VCI component for dhcpv6pd
+ A component for managing dhcp6 prefix delegation
+
+Package: vyatta-dhcpv6pd-v1-yang
+Architecture: all
+Depends: vci-dhcpv6-pd (>= ${binary:Version}), ${yang:Depends}
+Section: admin
+Priority: optional
+Description: DHCPv6 prefix delegation YANG file
+ The YANG definition for the DHCPv6 PD feature

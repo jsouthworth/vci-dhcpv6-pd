@@ -1,0 +1,4 @@
+usr/bin/dhcpv6pd lib/vci-dhcpv6-pd/bin
+#usr/bin/emit-dhcpv6pd-notification lib/vci-dhcpv6-pd/bin
+
+

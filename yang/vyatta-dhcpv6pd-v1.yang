@@ -1,0 +1,119 @@
+module vyatta-dhcpv6pd-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-dhcpv6pd:1";
+	prefix vyatta-dhcpv6pd-v1;
+
+	import ietf-inet-types {
+		prefix inet-types;
+	}
+	import vyatta-interfaces-v1 {
+		prefix if;
+	}
+	import vyatta-interfaces-dataplane-v1 {
+		prefix dp;
+	}
+	import vyatta-ipv6-rtradv-v1 {
+		prefix rtadv;
+	}
+
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+				 Dallas, TX 75202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2020, AT&T Intellectual Property.
+		All rights reserved.
+
+		Redistribution and use in source and binary forms, with or without
+		modification, are permitted provided that the following conditions
+		are met:
+
+		  1. Redistributions of source code must retain the above copyright
+		     notice, this list of conditions and the following disclaimer.
+		  2. Redistributions in binary form must reproduce the above
+		     copyright notice, this list of conditions and the following
+		     disclaimer in the documentation and/or other materials provided
+		     with the distribution.
+		  3. Neither the name of the copyright holder nor the names of its
+		     contributors may be used to endorse or promote products derived
+		     from this software without specific prior written permission.
+
+		THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		POSSIBILITY OF SUCH DAMAGE.
+
+		SPDX-License-Identifier: BSD-3-Clause
+
+		DHCPv6 Prefix Delegation configuration";
+
+	revision 2020-01-29 {
+		description "Initial revision.";
+	}
+
+	notification prefix-assigned {
+		leaf interface {
+			type string;
+		}
+		leaf prefix {
+			type inet-types:ipv6-prefix;
+		}
+	}
+
+	notification prefix-removed {
+		leaf interface {
+			type string;
+		}
+		leaf prefix {
+			type inet-types:ipv6-prefix;
+		}
+	}
+
+	grouping dhcpv6pd-address {
+		container dhcpv6pd {
+			presence "Enables dhcpv6pd address autoconfiguration";
+			configd:help "Enables dhcpv6pd address autoconfiguration";
+			leaf dhcpv6-client-interface {
+				description "Interface facing the dhcpv6 server";
+				configd:help "Interface facing the dhcpv6 server";
+				type string;
+				mandatory true;
+			}
+			leaf address-type {
+				description "Address derivation type";
+				configd:help "Address derivation type";
+				type enumeration {
+					enum eui64 {
+						description "Derive the address as a eui64 address";
+						configd:help "Derive the address as a eui64 address";
+					}
+					enum template {
+						description "Derive the address from the provided template";
+						configd:help "Derive the address from the provided template";
+					}
+				}
+				default eui64;
+			}
+			leaf template {
+				description "Derive address based on the provided template";
+				configd:help "Derive address based on the provided template";
+				must "address-type = template";
+				type string; //TODO: make pattern for a v6 template
+			}
+		}
+	}
+
+	augment /if:interfaces/dp:dataplane/dp:ipv6/rtadv:address {
+		uses dhcpv6pd-address;
+	}
+}

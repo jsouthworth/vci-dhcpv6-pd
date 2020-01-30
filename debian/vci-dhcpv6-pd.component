@@ -1,0 +1,9 @@
+[Vyatta Component]
+Name=net.vyatta.vci.dhcpv6pd
+Description=VCI component for DHCPv6 prefix-delegation
+ExecName=/lib/vci-dhcpv6-pd/bin/dhcpv6pd
+ConfigFile=/dev/null
+
+[Model net.vyatta.vci.dhcpv6pd.v1]
+Modules=vyatta-dhcpv6pd-v1
+ModelSets=vyatta-v1
