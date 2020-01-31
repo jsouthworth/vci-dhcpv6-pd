@@ -372,9 +372,10 @@ func calculateEUI64(prefix *net.IPNet, slaID uint16, mac net.HardwareAddr) strin
 	ip := make([]byte, 16)
 	masklen := 64 / 8
 	copy(ip, prefix.IP)
-	//TODO: slas may collide if we get a prefix longer than /48...
-	ip[masklen-2] = uint8(slaID >> 8)
-	ip[masklen-1] = uint8(slaID & 0xff)
+	ip[masklen-2] = (uint8(slaID>>8) & ^prefix.Mask[masklen-2]) |
+		(prefix.Mask[masklen-2] & prefix.IP[masklen-2])
+	ip[masklen-1] = (uint8(slaID&0xff) & ^prefix.Mask[masklen-1]) |
+		(prefix.Mask[masklen-1] & prefix.IP[masklen-1])
 	copy(ip[masklen:], eui64)
 
 	prefix.IP = ip
