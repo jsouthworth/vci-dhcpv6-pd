@@ -10,6 +10,8 @@ import (
 	"jsouthworth.net/go/etm/agent"
 	"jsouthworth.net/go/etm/atom"
 	"jsouthworth.net/go/immutable/hashmap"
+	"jsouthworth.net/go/seq"
+	"jsouthworth.net/go/transduce"
 )
 
 type DHCPv6PD struct {
@@ -178,95 +180,97 @@ func runIPBatch(input []string) error {
 	return cmd.Run()
 }
 
-func getIPBatchRemove(old, new *hashmap.Map) []string {
-	oldPrefixes, found := old.Find("known-prefixes")
+func getAddresses(state *hashmap.Map) *hashmap.Map {
+	prefixesV, found := state.Find("known-prefixes")
+	if !found {
+		return hashmap.Empty()
+	}
+	prefixes := prefixesV.(*hashmap.Map)
+	configV, found := state.Find("config")
 	if !found {
 		return nil
 	}
+	config := configV.(*hashmap.Map)
 
-	newPrefixes := hashmap.Empty()
-	newPrefixesV, found := new.Find("known-prefixes")
-	if found {
-		newPrefixes = newPrefixesV.(*hashmap.Map)
-	}
+	return seq.TransformInto(
+		hashmap.Empty(),
+		transduce.Compose(
+			transduce.Map(func(in interface{}) interface{} {
+				ent := in.(hashmap.Entry)
+				sourceIntf, targetIntfs := ent.Key(), ent.Value()
+				prefixV, found := prefixes.Find(sourceIntf)
+				if !found {
+					return nil
+				}
+				prefix := prefixV.(string)
+				out := seq.TransformInto(
+					hashmap.Empty(),
+					transduce.Compose(
+						transduce.Map(func(in interface{}) interface{} {
+							ent := in.(hashmap.Entry)
+							targetIntf, targetConf :=
+								ent.Key().(string), ent.Value().(*hashmap.Map)
+							address := calculateAddress(
+								targetIntf, targetConf, prefix)
+							if address == "" {
+								log.Printf("failed to calculate address",
+									targetIntf, targetConf, prefix)
+								return nil
+							}
+							return hashmap.EntryNew(targetIntf, address)
 
-	oldConfigV, found := old.Find("config")
-	if !found {
-		return nil
-	}
-	oldConfig := oldConfigV.(*hashmap.Map)
+						}),
+						transduce.Remove(func(in interface{}) bool {
+							return in == nil
+						}),
+					),
+					targetIntfs,
+				)
+				return hashmap.EntryNew(sourceIntf, out)
+			}),
+			transduce.Remove(func(in interface{}) bool {
+				return in == nil
+			}),
+		),
+		config,
+	).(*hashmap.Map)
+}
 
-	removedPrefixes := make(map[string]string)
-	oldPrefixes.(*hashmap.Map).Range(func(key string, val string) {
-		if !newPrefixes.Contains(key) {
-			removedPrefixes[key] = val
+func getIPBatchCommand(action, address, dev string) string {
+	return "address " + action + " " + address + " dev " + dev
+}
+
+func getIPBatchCommandsFromAction(action string, new, old *hashmap.Map) []string {
+	newAddresses := getAddresses(new)
+	oldAddresses := getAddresses(old)
+	log.Println("computing differences between new:", newAddresses, "old:", oldAddresses)
+	var out []string
+	newAddresses.Range(func(sourceIntf, targetIntfs interface{}) {
+		oldTargetIntfsV, found := oldAddresses.Find(sourceIntf)
+		if found {
+			oldTargetIntfs := oldTargetIntfsV.(*hashmap.Map)
+			targetIntfs.(*hashmap.Map).Range(func(targetIntf, address interface{}) {
+				if !oldTargetIntfs.Contains(targetIntf) {
+					out = append(out,
+						getIPBatchCommand(action,
+							address.(string), targetIntf.(string)))
+				}
+			})
+		} else {
+			targetIntfs.(*hashmap.Map).Range(func(targetIntf, address interface{}) {
+				out = append(out,
+					getIPBatchCommand(action, address.(string), targetIntf.(string)))
+			})
 		}
 	})
-	var out []string
-	for intf, prefix := range removedPrefixes {
-		targetIntfsV, found := oldConfig.Find(intf)
-		if !found {
-			continue
-		}
-		targetIntfs := targetIntfsV.(*hashmap.Map)
-		targetIntfs.Range(func(targetIntf string, targetConf *hashmap.Map) {
-			address := calculateAddress(targetIntf, targetConf, prefix)
-			if address == "" {
-				log.Printf("failed to calculate address",
-					targetIntf, targetConf, prefix)
-				return
-			}
-			out = append(out,
-				"address del "+address+" dev "+targetIntf)
-		})
-	}
 	return out
+}
+func getIPBatchRemove(old, new *hashmap.Map) []string {
+	return getIPBatchCommandsFromAction("del", old, new)
 }
 
 func getIPBatchAdd(old, new *hashmap.Map) []string {
-	newPrefixes, found := new.Find("known-prefixes")
-	if !found {
-		return nil
-	}
-
-	oldPrefixes := hashmap.Empty()
-	oldPrefixesV, found := old.Find("known-prefixes")
-	if found {
-		oldPrefixes = oldPrefixesV.(*hashmap.Map)
-	}
-
-	newConfigV, found := new.Find("config")
-	if !found {
-		return nil
-	}
-	newConfig := newConfigV.(*hashmap.Map)
-
-	addedPrefixes := make(map[string]string)
-	newPrefixes.(*hashmap.Map).Range(func(key string, val string) {
-		if !oldPrefixes.Contains(key) {
-			addedPrefixes[key] = val
-		}
-	})
-
-	var out []string
-	for intf, prefix := range addedPrefixes {
-		targetIntfsV, found := newConfig.Find(intf)
-		if !found {
-			continue
-		}
-		targetIntfs := targetIntfsV.(*hashmap.Map)
-		targetIntfs.Range(func(targetIntf string, targetConf *hashmap.Map) {
-			address := calculateAddress(targetIntf, targetConf, prefix)
-			if address == "" {
-				log.Printf("failed to calculate address",
-					targetIntf, targetConf, prefix)
-				return
-			}
-			out = append(out,
-				"address add "+address+" dev "+targetIntf)
-		})
-	}
-	return out
+	return getIPBatchCommandsFromAction("add", new, old)
 }
 
 func transformConfigToDesiredState(tree *data.Tree) *hashmap.Map {
