@@ -254,6 +254,13 @@ func getIPBatchCommandsFromAction(action string, new, old *hashmap.Map) []string
 					out = append(out,
 						getIPBatchCommand(action,
 							address.(string), targetIntf.(string)))
+				} else {
+					oldAddress := oldTargetIntfs.At(targetIntf).(string)
+					if address != oldAddress {
+						out = append(out,
+							getIPBatchCommand(action,
+								address.(string), targetIntf.(string)))
+					}
 				}
 			})
 		} else {
