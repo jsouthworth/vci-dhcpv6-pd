@@ -1,0 +1,22 @@
+#!/bin/bash
+# Only execute on specific occasions
+case $reason in
+    BOUND6|EXPIRE6|REBIND6|REBOOT6|RENEW6)
+        # Only execute if either an old or a new prefix is defined
+        if [ -n "$old_ip6_prefix" ] || [ -n "$new_ip6_prefix" ]; then
+	    # Remove old prefix if it differs from new prefix
+	    [ -n "$old_ip6_prefix" ] && \
+		[ "$old_ip6_prefix" != "$new_ip6_prefix" ] && \
+		/usr/lib/vci-dhcpv6-pd/bin/dhcpv6pd-emit-notification \
+		    -notif prefix-removed \
+		    -interface "$interface" \
+		    -prefix "$old_ip6_prefix"
+            # Assign new prefix
+            [ -n "$new_ip6_prefix" ] && \
+		/usr/lib/vci-dhcpv6-pd/bin/dhcpv6pd-emit-notification \
+		    -notif prefix-assigned \
+		    -interface "$interface" \
+		    -prefix "$new_ip6_prefix"
+        fi
+	;;
+esac

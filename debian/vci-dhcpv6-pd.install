@@ -1,4 +1,3 @@
 usr/bin/dhcpv6pd lib/vci-dhcpv6-pd/bin
-#usr/bin/emit-dhcpv6pd-notification lib/vci-dhcpv6-pd/bin
-
-
+usr/bin/dhcpv6pd-emit-notification lib/vci-dhcpv6-pd/bin
+scripts/vci-dhcpv6-pd-dhclient-hook etc/dhcp/dhclient-exit-hooks.d
