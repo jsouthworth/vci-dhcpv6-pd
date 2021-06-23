@@ -1,3 +1,5 @@
+// Copyright (c) 2020-2021, ATT Intellectual Property. All rights reserved.
+// SPDX-License-Identifier: GPL-2.0-only
 package dhcpv6pd
 
 import (
